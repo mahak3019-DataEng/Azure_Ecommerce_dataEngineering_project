@@ -26,15 +26,15 @@ This project employs a range of Azure services, including Azure Data Factory, Da
 
 ### Data Sources
 
-- ** MySQL, SFTP
+- **MySQL, SFTP
 
 ### Datasets Format
 
-- ** CSV, Parquet
+- **CSV, Parquet
 
 ### ADF Pipelines
 
-- ** 6 Pipelines
+- **6 Pipelines
 
 
 ### Cluster Configuration
@@ -45,7 +45,7 @@ This project employs a range of Azure services, including Azure Data Factory, Da
 
 ### Authentication
 
-- ** System Assigned Managed Identity, Service Principal, or Access Token
+- **System Assigned Managed Identity, Service Principal, or Access Token
 
 ### Performance Optimization Techniques
 
