@@ -1,0 +1,12 @@
+{
+	"name": "ls_adls",
+	"properties": {
+		"description": "connecting to adls gen2",
+		"annotations": [],
+		"type": "AzureBlobFS",
+		"typeProperties": {
+			"url": "https://dbadlsstorageaccdev.dfs.core.windows.net/"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/linkedservices"
+}

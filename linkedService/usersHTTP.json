@@ -1,0 +1,13 @@
+{
+	"name": "usersHTTP",
+	"properties": {
+		"description": "users data from darshil github",
+		"annotations": [],
+		"type": "HttpServer",
+		"typeProperties": {
+			"url": "https://raw.githubusercontent.com/darshilparmar/apache-spark-with-data-bricks-for-data-engineering/refs/heads/main/Project%202%20-%20ECommerce%20Data%20Analysis%20Azure%20Data%20Engineering/data/6M-0K-99K.users.dataset.public.csv",
+			"enableServerCertificateValidation": true,
+			"authenticationType": "Anonymous"
+		}
+	}
+}

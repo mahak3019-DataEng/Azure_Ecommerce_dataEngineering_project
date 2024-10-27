@@ -1,0 +1,113 @@
+{
+	"name": "users_sql",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ecommerce_sql",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "identifierHash",
+				"type": "nvarchar"
+			},
+			{
+				"name": "type",
+				"type": "nvarchar"
+			},
+			{
+				"name": "country",
+				"type": "nvarchar"
+			},
+			{
+				"name": "language",
+				"type": "nvarchar"
+			},
+			{
+				"name": "socialNbFollowers",
+				"type": "nvarchar"
+			},
+			{
+				"name": "socialNbFollows",
+				"type": "nvarchar"
+			},
+			{
+				"name": "socialProductsLiked",
+				"type": "nvarchar"
+			},
+			{
+				"name": "productsListed",
+				"type": "nvarchar"
+			},
+			{
+				"name": "productsSold",
+				"type": "nvarchar"
+			},
+			{
+				"name": "productsPassRate",
+				"type": "nvarchar"
+			},
+			{
+				"name": "productsWished",
+				"type": "nvarchar"
+			},
+			{
+				"name": "productsBought",
+				"type": "nvarchar"
+			},
+			{
+				"name": "gender",
+				"type": "nvarchar"
+			},
+			{
+				"name": "civilityGenderId",
+				"type": "nvarchar"
+			},
+			{
+				"name": "civilityTitle",
+				"type": "nvarchar"
+			},
+			{
+				"name": "hasAnyApp",
+				"type": "nvarchar"
+			},
+			{
+				"name": "hasAndroidApp",
+				"type": "nvarchar"
+			},
+			{
+				"name": "hasIosApp",
+				"type": "nvarchar"
+			},
+			{
+				"name": "hasProfilePicture",
+				"type": "nvarchar"
+			},
+			{
+				"name": "daysSinceLastLogin",
+				"type": "nvarchar"
+			},
+			{
+				"name": "seniority",
+				"type": "nvarchar"
+			},
+			{
+				"name": "seniorityAsMonths",
+				"type": "nvarchar"
+			},
+			{
+				"name": "seniorityAsYears",
+				"type": "nvarchar"
+			},
+			{
+				"name": "countryCode",
+				"type": "nvarchar"
+			}
+		],
+		"typeProperties": {
+			"schema": "Ecommerce",
+			"table": "users"
+		}
+	}
+}

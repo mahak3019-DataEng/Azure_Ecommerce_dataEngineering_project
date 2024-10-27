@@ -1,0 +1,939 @@
+{
+	"name": "pl_source_azuresql_ingestion",
+	"properties": {
+		"activities": [
+			{
+				"name": "metadata_lookup",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureDatabricksDeltaLakeSource",
+						"query": {
+							"value": "@concat(\n    'select control.source_ref_id, control.job_id, control.database_name, control.user_name, control.secret_name, control.storage_account, control.adls_url, control.container_name, control.logic_app_url, control.email_id, params.table_name, params.adls_file_path, params.bronze_schema, params.bronze_tbl, params.silver_schema, params.silver_tbl, params.gold_schema, params.gold_tbl from ',\n    pipeline().parameters.metadata_databse, \n    '.tbl_source_control control join ', \n    pipeline().parameters.metadata_databse, \n    '.tbl_parameters params on control.job_id = params.job_id;'\n)",
+							"type": "Expression"
+						}
+					},
+					"dataset": {
+						"referenceName": "ds_azure_databricks_delta_lake",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "for_each_metadata_item",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "metadata_lookup",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					},
+					{
+						"activity": "pipeline start time variable",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('metadata_lookup').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "copy_table_records",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "@concat('select * from ',item().table_name)",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "ds_input_azuresql",
+									"type": "DatasetReference",
+									"parameters": {
+										"database_name": {
+											"value": "@item().database_name",
+											"type": "Expression"
+										},
+										"user_name": {
+											"value": "@item().user_name",
+											"type": "Expression"
+										},
+										"secret_name": {
+											"value": "@item().secret_name",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "ds_output_parquet_adls",
+									"type": "DatasetReference",
+									"parameters": {
+										"container_name": {
+											"value": "@item().container_name",
+											"type": "Expression"
+										},
+										"adls_file_path": {
+											"value": "@item().adls_file_path",
+											"type": "Expression"
+										},
+										"table_name": {
+											"value": "@item().table_name",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "copy_data_log_success",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "copy_table_records",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+								"baseParameters": {
+									"env": {
+										"value": "@pipeline().globalParameters.env",
+										"type": "Expression"
+									},
+									"pipeLineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"logMessage": {
+										"value": "@concat('Copied ', item().table_name,' from azure sql to adls landing container.')",
+										"type": "Expression"
+									},
+									"status": {
+										"value": "Success",
+										"type": "Expression"
+									},
+									"triggerType": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"loadId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"logTimestamp": {
+										"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "copy_data_log_failure",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "copy_table_records",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+								"baseParameters": {
+									"env": {
+										"value": "@pipeline().globalParameters.env",
+										"type": "Expression"
+									},
+									"pipeLineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"logMessage": {
+										"value": "@concat('Failed to copy ', item().table_name,' from azure sql to adls landing container.')",
+										"type": "Expression"
+									},
+									"status": {
+										"value": "@concat('Error: ', activity('copy_table_records').Error.message)",
+										"type": "Expression"
+									},
+									"triggerType": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"loadId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"logTimestamp": {
+										"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "compare count",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "copy_table_records",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(activity('copy_table_records').output.rowsRead, activity('copy_table_records').output.rowsCopied)",
+									"type": "Expression"
+								},
+								"ifFalseActivities": [
+									{
+										"name": "record mismatch log",
+										"type": "DatabricksNotebook",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 2,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+											"baseParameters": {
+												"env": {
+													"value": "@pipeline().globalParameters.env",
+													"type": "Expression"
+												},
+												"pipeLineName": {
+													"value": "@pipeline().Pipeline",
+													"type": "Expression"
+												},
+												"logMessage": {
+													"value": "@concat('Failed to mismatch records for table ', item().table_name, ' input rows read ', activity('copy_table_records').output.rowsRead,' is not equal to rows copied.',activity('copy_table_records').output.rowsCopied)\n\n",
+													"type": "Expression"
+												},
+												"status": {
+													"value": "Success",
+													"type": "Expression"
+												},
+												"triggerType": {
+													"value": "@pipeline().TriggerType",
+													"type": "Expression"
+												},
+												"loadId": {
+													"value": "@pipeline().RunId",
+													"type": "Expression"
+												},
+												"logTimestamp": {
+													"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+													"type": "Expression"
+												}
+											}
+										},
+										"linkedServiceName": {
+											"referenceName": "ls_databricks_compute_job",
+											"type": "LinkedServiceReference"
+										}
+									},
+									{
+										"name": "fail file ingestion",
+										"type": "Fail",
+										"dependsOn": [
+											{
+												"activity": "record mismatch log",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"userProperties": [],
+										"typeProperties": {
+											"message": {
+												"value": "@concat('Failed to mismatch records for table ', item().table_name, ' input rows read ', activity('copy_table_records').output.rowsRead,' is not equal to rows copied.',activity('copy_table_records').output.rowsCopied)",
+												"type": "Expression"
+											},
+											"errorCode": "Record mismatch!"
+										}
+									}
+								]
+							}
+						},
+						{
+							"name": "trigger pl_azuresql_landing_to_bronze",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "compare count",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "pl_azuresql_landing_to_bronze",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"metadata_values": {
+										"value": "@item()",
+										"type": "Expression"
+									},
+									"job_id": {
+										"value": "@item().job_id",
+										"type": "Expression"
+									},
+									"pipeline_start_time": {
+										"value": "@variables('start_time')",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "move files from landing to archieved",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "trigger pl_azuresql_landing_to_bronze",
+									"dependencyConditions": [
+										"Completed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/set_up/archieve/archieve source files",
+								"baseParameters": {
+									"file_path": {
+										"value": "@item().adls_file_path",
+										"type": "Expression"
+									},
+									"loadID": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"source_file_name": {
+										"value": "@item().table_name",
+										"type": "Expression"
+									},
+									"storage_account_name": {
+										"value": "@item().storage_account",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "move_files_log_success",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "move files from landing to archieved",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+								"baseParameters": {
+									"env": {
+										"value": "@pipeline().globalParameters.env",
+										"type": "Expression"
+									},
+									"pipeLineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"logMessage": {
+										"value": "@concat('Archieved ', item().table_name,' from azure landing to adls landing archieved folder.')",
+										"type": "Expression"
+									},
+									"status": {
+										"value": "Success",
+										"type": "Expression"
+									},
+									"triggerType": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"loadId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"logTimestamp": {
+										"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "move_files_log_failure",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "move files from landing to archieved",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+								"baseParameters": {
+									"env": {
+										"value": "@pipeline().globalParameters.env",
+										"type": "Expression"
+									},
+									"pipeLineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"logMessage": {
+										"value": "@concat('Failed to archieved ', item().table_name,' from azure landing to azure landing archieved.')",
+										"type": "Expression"
+									},
+									"status": {
+										"value": "@concat('Error: ',activity('move files from landing to archieved').Error.message)",
+										"type": "Expression"
+									},
+									"triggerType": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"loadId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"logTimestamp": {
+										"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "trigger pl_bronze_to_silver",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "trigger pl_azuresql_landing_to_bronze",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "pl_bronze_to_silver",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"metadata_values": {
+										"value": "@item()",
+										"type": "Expression"
+									},
+									"job_id": {
+										"value": "@item().job_id",
+										"type": "Expression"
+									},
+									"pipeline_start_time": {
+										"value": "@variables('start_time')",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "pipeline_copy_failed_mail",
+							"type": "WebActivity",
+							"dependsOn": [
+								{
+									"activity": "copy_table_records",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"method": "POST",
+								"url": {
+									"value": "@item().logic_app_url",
+									"type": "Expression"
+								},
+								"body": {
+									"value": "{\n    \"to\":\"@{item().email_id}\",\n    \"subject\":\" @{concat('[',pipeline().globalParameters.env,']',pipeline().Pipeline,':[Source File Copy Failed on landing]')}\",\n    \"email_body\":\"\n   \n    <!DOCTYPE html>\n<html>\n<body>\n    Hi all,<br/>\n    Please find below the status for @{pipeline().Pipeline}<br/><br/>\n    \n    <table>\n        <tr>\n            <th style='text-align: left;'>Parameters</th>\n            <th style='text-align: left;'>Value</th>\n        </tr>\n        <tr>\n            <td>JobID</td>\n            <td>@{pipeline().parameters.job_id}</td>\n        </tr>\n        <tr>\n            <td>Status</td>\n            <td><span style='color:Red';>Failed</span></td>\n        </tr>\n        <tr>\n            <td>Scheduled</td>\n            <td>@{pipeline().TriggerType}</td>\n        </tr>\n        <tr>\n            <td>LoadID</td>\n            <td>@{pipeline().RunId}</td>\n        </tr>\n        <tr>\n            <td>JobStart</td>\n            <td>@{variables('start_time')}</td>\n        </tr>\n        <tr>\n            <td>FileName</td>\n            <td>@{item().table_name}</td>\n        </tr>\n        <tr>\n            <td>Error</td>\n            <td>@{activity('copy_table_records').Error.message\n}</td>\n        </tr>\n    </table><br/><br/><br/>\n</body>\n</html>\n    \"\n}",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "trigger_pl_silver_to_gold",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "for_each_metadata_item",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "pl_silver_to_gold",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"metadata_values": {
+							"value": "@activity('metadata_lookup').output.value[0]",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "pipeline Succesfully ended log",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "trigger_pl_silver_to_gold",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+					"baseParameters": {
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						},
+						"pipeLineName": {
+							"value": "@pipeline().Pipeline",
+							"type": "Expression"
+						},
+						"logMessage": {
+							"value": "Pipeline ended successfully: Final ingested to gold container",
+							"type": "Expression"
+						},
+						"status": {
+							"value": "Success",
+							"type": "Expression"
+						},
+						"triggerType": {
+							"value": "@pipeline().TriggerType",
+							"type": "Expression"
+						},
+						"loadId": {
+							"value": "@pipeline().RunId",
+							"type": "Expression"
+						},
+						"logTimestamp": {
+							"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Pipeline Endede with error log",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "trigger_pl_silver_to_gold",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+					"baseParameters": {
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						},
+						"pipeLineName": {
+							"value": "@pipeline().Pipeline",
+							"type": "Expression"
+						},
+						"logMessage": {
+							"value": "@concat('Pipeline Ended with error: ', activity('trigger_pl_silver_to_gold').output.Error.message)",
+							"type": "Expression"
+						},
+						"status": {
+							"value": "Success",
+							"type": "Expression"
+						},
+						"triggerType": {
+							"value": "@pipeline().TriggerType",
+							"type": "Expression"
+						},
+						"loadId": {
+							"value": "@pipeline().RunId",
+							"type": "Expression"
+						},
+						"logTimestamp": {
+							"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "copy_files_failure_log_complete",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "for_each_metadata_item",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+					"baseParameters": {
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						},
+						"pipeLineName": {
+							"value": "@pipeline().Pipeline",
+							"type": "Expression"
+						},
+						"logMessage": {
+							"value": "Error: Failure inside for loop till loading files to silver container",
+							"type": "Expression"
+						},
+						"status": {
+							"value": "Success",
+							"type": "Expression"
+						},
+						"triggerType": {
+							"value": "@pipeline().TriggerType",
+							"type": "Expression"
+						},
+						"loadId": {
+							"value": "@pipeline().RunId",
+							"type": "Expression"
+						},
+						"logTimestamp": {
+							"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "pipeline start time variable",
+				"type": "SetVariable",
+				"dependsOn": [],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "start_time",
+					"value": {
+						"value": "@formatDateTime(convertFromUtc(utcNow(), 'India Standard Time' ),'yyyy-MM-dd HH:MM:ss')",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "pipeline_inProgress",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "metadata_lookup",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"url": {
+						"value": "@activity('metadata_lookup').output.value[0].logic_app_url",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n    \"to\":\"@{activity('metadata_lookup').output.value[0].email_id}\",\n    \"subject\":\"@{concat('[',pipeline().globalParameters.env,']',pipeline().Pipeline,':[In Progress]')}\",\n    \"email_body\":\"\n\n<!DOCTYPE html>\n<html>\n<body>\n\n    Hi all,<br/>\n    Please find below the status for @{pipeline().Pipeline}<br/>\n\n    <table>\n        <tr>\n            <th style='text-align: left;'>Parameters</th>\n            <th style='text-align: left;'>Values</th>\n        </tr>\n        <tr>\n            <td>JobID</td>\n            <td>@{pipeline().parameters.job_id}</td>\n        </tr>\n        <tr>\n            <td>Status</td>\n            <td><span style='color: red;'>In Progress</span></td>\n        </tr>\n        <tr>\n            <td>Scheduled</td>\n            <td>@{pipeline().TriggerType}</td>\n        </tr>\n        <tr>\n            <td>LoadID</td>\n            <td>@{pipeline().RunId}</td>\n        </tr>\n        <tr>\n            <td>JobStart</td>\n            <td>@{variables('start_time')}</td>\n        </tr>\n        <tr>\n            <td>JobEnd</td>\n            <td>@{formatDateTime(convertFromUtc(utcNow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}</td>\n        </tr>\n    </table><br/><br/><br/>\n\n\n\n\n</body>\n</html>\n\"\n}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "pipeline_successfully_ended_email",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "trigger_pl_silver_to_gold",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"url": {
+						"value": "@activity('metadata_lookup').output.value[0].logic_app_url",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n    \"to\":\"@{activity('metadata_lookup').output.value[0].email_id}\",\n    \"subject\":\"@{concat('[',pipeline().globalParameters.env,']',pipeline().Pipeline,':[Completed]')}\",\n    \"email_body\":\"\n\n<!DOCTYPE html>\n<html>\n<body>\n\n    Hi all,<br/>\n    Please find below the status for @{pipeline().Pipeline}<br/>\n\n    <table>\n        <tr>\n            <th style='text-align: left;'>Parameters</th>\n            <th style='text-align: left;'>Values</th>\n        </tr>\n        <tr>\n            <td>JobID</td>\n            <td>@{pipeline().parameters.job_id}</td>\n        </tr>\n        <tr>\n            <td>Status</td>\n            <td><span style='color: green;'>In Progress</span></td>\n        </tr>\n        <tr>\n            <td>Scheduled</td>\n            <td>@{pipeline().TriggerType}</td>\n        </tr>\n        <tr>\n            <td>LoadID</td>\n            <td>@{pipeline().RunId}</td>\n        </tr>\n        <tr>\n            <td>JobStart</td>\n            <td>@{variables('start_time')}</td>\n        </tr>\n        <tr>\n            <td>JobEnd</td>\n            <td>@{formatDateTime(convertFromUtc(utcNow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}</td>\n        </tr>\n    </table><br/><br/><br/>\n\n\n\n\n</body>\n</html>\n\"\n}",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "pipeline_failed_ended_email",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "trigger_pl_silver_to_gold",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"url": {
+						"value": "@activity('metadata_lookup').output.value[0].logic_app_url",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n    \"to\":\"@{activity('metadata_lookup').output.value[0].email_id}\",\n    \"subject\":\"@{concat('[',pipeline().globalParameters.env,']',pipeline().Pipeline,':[Failed]')}\",\n    \"email_body\":\"\n\n<!DOCTYPE html>\n<html>\n<body>\n\n    Hi all,<br/>\n    Please find below the status for @{pipeline().Pipeline}<br/>\n\n    <table>\n        <tr>\n            <th style='text-align: left;'>Parameters</th>\n            <th style='text-align: left;'>Values</th>\n        </tr>\n        <tr>\n            <td>JobID</td>\n            <td>@{pipeline().parameters.job_id}</td>\n        </tr>\n        <tr>\n            <td>Status</td>\n            <td><span style='color: red;'>In Progress</span></td>\n        </tr>\n        <tr>\n            <td>Scheduled</td>\n            <td>@{pipeline().TriggerType}</td>\n        </tr>\n        <tr>\n            <td>LoadID</td>\n            <td>@{pipeline().RunId}</td>\n        </tr>\n        <tr>\n            <td>JobStart</td>\n            <td>@{variables('start_time')}</td>\n        </tr>\n        <tr>\n            <td>JobEnd</td>\n            <td>@{formatDateTime(convertFromUtc(utcNow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}</td>\n        </tr>\n    </table><br/><br/><br/>\n\n\n\n\n</body>\n</html>\n\"\n}",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"job_id": {
+				"type": "string",
+				"defaultValue": "102"
+			},
+			"metadata_databse": {
+				"type": "string",
+				"defaultValue": "metadata_schema"
+			}
+		},
+		"variables": {
+			"start_time": {
+				"type": "String"
+			}
+		},
+		"annotations": []
+	}
+}

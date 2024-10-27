@@ -1,0 +1,40 @@
+{
+	"name": "ds_input_azuresql",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_azuresqldb",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"database_name": {
+					"value": "@dataset().database_name",
+					"type": "Expression"
+				},
+				"user_name": {
+					"value": "@dataset().user_name",
+					"type": "Expression"
+				},
+				"secret_name": {
+					"value": "@dataset().secret_name",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"database_name": {
+				"type": "string",
+				"defaultValue": "db-sqldatabase-dev"
+			},
+			"user_name": {
+				"type": "string",
+				"defaultValue": "mahak3019"
+			},
+			"secret_name": {
+				"type": "string",
+				"defaultValue": "azure-sql-password"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": []
+	}
+}

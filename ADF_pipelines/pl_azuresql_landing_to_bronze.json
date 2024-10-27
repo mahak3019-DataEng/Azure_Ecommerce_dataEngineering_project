@@ -1,0 +1,301 @@
+{
+	"name": "pl_azuresql_landing_to_bronze",
+	"properties": {
+		"activities": [
+			{
+				"name": "bronze layer ingestion",
+				"type": "DatabricksNotebook",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/azuresql_bronze_ingestion",
+					"baseParameters": {
+						"bronze_schema": {
+							"value": "@pipeline().parameters.metadata_values.bronze_schema",
+							"type": "Expression"
+						},
+						"bronze_table": {
+							"value": "@pipeline().parameters.metadata_values.bronze_tbl",
+							"type": "Expression"
+						},
+						"loadID": {
+							"value": "@pipeline()?.TriggeredByPipelineRunId",
+							"type": "Expression"
+						},
+						"source_table_name": {
+							"value": "@pipeline().parameters.metadata_values.table_name",
+							"type": "Expression"
+						},
+						"storage_account_name": {
+							"value": "@pipeline().parameters.metadata_values.storage_account",
+							"type": "Expression"
+						},
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "check records count in landing and bronze",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "bronze layer ingestion",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('bronze layer ingestion').output.runOutput[0], activity('bronze layer ingestion').output.runOutput[1] )",
+						"type": "Expression"
+					},
+					"ifFalseActivities": [
+						{
+							"name": "bronze record mismatched",
+							"type": "DatabricksNotebook",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 2,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+								"baseParameters": {
+									"env": {
+										"value": "@pipeline().globalParameters.env",
+										"type": "Expression"
+									},
+									"pipeLineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"logMessage": {
+										"value": "@concat('Records mismatched between source table ',pipeline().parameters.metadata_values.table_name,' and ingested bronze table ',pipeline().parameters.metadata_values.bronze_tbl)",
+										"type": "Expression"
+									},
+									"status": {
+										"value": "Success",
+										"type": "Expression"
+									},
+									"triggerType": {
+										"value": "@pipeline().TriggerType",
+										"type": "Expression"
+									},
+									"loadId": {
+										"value": "@pipeline()?.TriggeredByPipelineRunId",
+										"type": "Expression"
+									},
+									"logTimestamp": {
+										"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "ls_databricks_compute_job",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "fail ingestion from landing to bronze",
+							"type": "Fail",
+							"dependsOn": [
+								{
+									"activity": "bronze record mismatched",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"message": {
+									"value": "@concat('Failed to mismatch records for table ', pipeline().parameters.metadata_values.table_name, ' input rows read ', activity('bronze layer ingestion').output.runOutput[0],' is not equal to rows copied.',activity('bronze layer ingestion').output.runOutput[1],' for table in bronze ',pipeline().parameters.metadata_values.bronze_tbl)",
+									"type": "Expression"
+								},
+								"errorCode": "Record mismatch!"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "bronze_copy_log_failure",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "bronze layer ingestion",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+					"baseParameters": {
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						},
+						"pipeLineName": {
+							"value": "@pipeline().Pipeline",
+							"type": "Expression"
+						},
+						"logMessage": {
+							"value": "@concat('Failed to copy files from landing ', pipeline().parameters.metadata_values.table_name, ' to the bronze container ',pipeline().parameters.metadata_values.bronze_tbl)",
+							"type": "Expression"
+						},
+						"status": {
+							"value": "@concat('Error: ',activity('bronze layer ingestion').Error.message)",
+							"type": "Expression"
+						},
+						"triggerType": {
+							"value": "@pipeline().TriggerType",
+							"type": "Expression"
+						},
+						"loadId": {
+							"value": "@pipeline()?.TriggeredByPipelineRunId",
+							"type": "Expression"
+						},
+						"logTimestamp": {
+							"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "bronze_copy_log_success",
+				"type": "DatabricksNotebook",
+				"dependsOn": [
+					{
+						"activity": "bronze layer ingestion",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"notebookPath": "/Ecommerce_databricks_notebooks/log_record_tbl_insert",
+					"baseParameters": {
+						"env": {
+							"value": "@pipeline().globalParameters.env",
+							"type": "Expression"
+						},
+						"pipeLineName": {
+							"value": "@pipeline().Pipeline",
+							"type": "Expression"
+						},
+						"logMessage": {
+							"value": "@concat('Copied ', pipeline().parameters.metadata_values.table_name,' from landing to adls bronze container. ')",
+							"type": "Expression"
+						},
+						"status": {
+							"value": "Success",
+							"type": "Expression"
+						},
+						"triggerType": {
+							"value": "@pipeline().TriggerType",
+							"type": "Expression"
+						},
+						"loadId": {
+							"value": "@pipeline()?.TriggeredByPipelineRunId",
+							"type": "Expression"
+						},
+						"logTimestamp": {
+							"value": "@formatDateTime(convertfromUtc(utcnow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')",
+							"type": "Expression"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "ls_databricks_compute_job",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "bronze_layer_ingestion_failed_email",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "bronze layer ingestion",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"method": "POST",
+					"url": {
+						"value": "@pipeline().parameters.metadata_values.logic_app_url",
+						"type": "Expression"
+					},
+					"body": {
+						"value": "{\n    \"to\":\"@{pipeline().parameters.metadata_values.email_id}\",\n    \"subject\":\"@{concat('[',pipeline().globalParameters.env,']',pipeline().Pipeline,':[Bronze layer ingestion failed]')}\",\n    \"email_body\":\"\n\n<!DOCTYPE html>\n<html>\n<body>\n\n    Hi all,<br/>\n    Please find below the status for @{pipeline()?.TriggeredByPipelineName}<br/>\n\n    <table>\n        <tr>\n            <th style='text-align: left;'>Parameters</th>\n            <th style='text-align: left;'>Values</th>\n        </tr>\n        <tr>\n            <td>JobID</td>\n            <td>@{pipeline().parameters.job_id}</td>\n        </tr>\n        <tr>\n            <td>Status</td>\n            <td><span style='color: red;'>Failed</span></td>\n        </tr>\n        <tr>\n            <td>Scheduled</td>\n            <td>@{pipeline().TriggerType}</td>\n        </tr>\n        <tr>\n            <td>Bronze Table</td>\n            <td>@{pipeline().parameters.metadata_values.bronze_tbl}</td>\n        </tr>\n        <tr>\n            <td>LoadID</td>\n            <td>@{pipeline()?.TriggeredByPipelineRunId}</td>\n        </tr>\n        <tr>\n            <td>JobStart</td>\n            <td>@{pipeline().parameters.pipeline_start_time}</td>\n        </tr>\n        <tr>\n            <td>JobEnd</td>\n            <td>@{formatDateTime(convertFromUtc(utcNow(), 'India Standard Time'), 'yyyy-MM-dd HH:mm:ss')}</td>\n        </tr>\n    </table><br/><br/><br/>\n\n\n\n\n</body>\n</html>\n\"\n}",
+						"type": "Expression"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"metadata_values": {
+				"type": "object"
+			},
+			"job_id": {
+				"type": "string"
+			},
+			"pipeline_start_time": {
+				"type": "string"
+			}
+		},
+		"annotations": []
+	}
+}

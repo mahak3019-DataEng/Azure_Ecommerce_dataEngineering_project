@@ -1,0 +1,16 @@
+{
+	"name": "countries_sql",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ecommerce_sql",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [],
+		"typeProperties": {
+			"schema": "Ecommerce",
+			"table": "countries"
+		}
+	}
+}

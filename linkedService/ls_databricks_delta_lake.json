@@ -1,0 +1,13 @@
+{
+	"name": "ls_databricks_delta_lake",
+	"properties": {
+		"description": "connecting to azure databricks",
+		"annotations": [],
+		"type": "AzureDatabricksDeltaLake",
+		"typeProperties": {
+			"domain": "https://adb-3277537989659861.1.azuredatabricks.net",
+			"clusterId": "0919-182317-g898z4qm",
+			"workspaceResourceId": "/subscriptions/ef2a24ec-90c9-4008-a1bc-d500d70bbf79/resourceGroups/databricks_tutorial/providers/Microsoft.Databricks/workspaces/databricks_workspace_tutorial"
+		}
+	}
+}

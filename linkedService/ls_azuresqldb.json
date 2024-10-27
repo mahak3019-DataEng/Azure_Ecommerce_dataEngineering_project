@@ -1,0 +1,35 @@
+{
+	"name": "ls_azuresqldb",
+	"properties": {
+		"description": "linked service connecting to azure sql database",
+		"parameters": {
+			"database_name": {
+				"type": "string",
+				"defaultValue": "db-sqldatabase-dev"
+			},
+			"user_name": {
+				"type": "string",
+				"defaultValue": "mahak3019"
+			},
+			"secret_name": {
+				"type": "string",
+				"defaultValue": "azure-sql-password"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"connectionString": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=db-sqlserver.database.windows.net;Initial Catalog=@{linkedService().database_name};User ID=@{linkedService().user_name}",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "ls_keyvault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "azure-sql-password",
+				"secretVersion": "91fe1b53abfa4cd4a08e72b0293b19ed"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/linkedservices"
+}

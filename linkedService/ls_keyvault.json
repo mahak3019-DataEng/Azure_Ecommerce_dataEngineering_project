@@ -1,0 +1,11 @@
+{
+	"name": "ls_keyvault",
+	"properties": {
+		"description": "connecting to azure key vault",
+		"annotations": [],
+		"type": "AzureKeyVault",
+		"typeProperties": {
+			"baseUrl": "https://db-keyvaultdev.vault.azure.net/"
+		}
+	}
+}
